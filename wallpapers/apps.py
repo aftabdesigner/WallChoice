@@ -1,0 +1,12 @@
+from django.apps import AppConfig
+
+
+class WallpapersConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "wallpapers"
+    verbose_name = "Wallpapers"
+
+    def ready(self):
+        from . import signals
+
+        signals.connect()
