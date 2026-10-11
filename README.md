@@ -176,12 +176,15 @@ The Dockerfile runs `migrate`, then gunicorn with `WEB_CONCURRENCY` workers ×
 | `DEBUG` | `False` |
 | `DATABASE_URL` | `${{ Postgres.DATABASE_URL }}` |
 | `USE_LOCAL_MEDIA` | `False` |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_ENDPOINT_URL`, `R2_PUBLIC_BASE_URL` | Cloudflare R2 |
+| `R2_ACCOUNT_ID` or `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_BASE_URL` | Cloudflare R2 (public mode) |
 | `REDIS_URL` | optional: `${{ Redis.REDIS_URL }}` to share the response cache between replicas |
-| `R2_SIGNED_URLS` | optional: `True` for expiring links from a private bucket |
+| `R2_SIGNED_URLS` | optional: `True` for expiring links from a private bucket; then `R2_PUBLIC_BASE_URL` is not needed |
 | `WEB_CONCURRENCY`, `GUNICORN_THREADS` | optional tuning |
 
 `USE_LOCAL_MEDIA` must be `False` in production: Railway's disk is wiped on deploy.
+For local development with R2, set `USE_LOCAL_MEDIA=False` and configure the R2
+credentials and bucket. Public buckets also need `R2_PUBLIC_BASE_URL`; private
+buckets can use `R2_SIGNED_URLS=True`.
 
 ## Scaling
 

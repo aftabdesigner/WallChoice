@@ -23,14 +23,6 @@ env = environ.Env(
     R2_ENDPOINT_URL=(str, ""),
     R2_PUBLIC_BASE_URL=(str, ""),
     R2_REGION=(str, "auto"),
-    B2_ENDPOINT=(str, ""),
-    B2_REGION=(str, ""),
-    B2_KEY_ID=(str, ""),
-    B2_APP_KEY=(str, ""),
-    B2_BUCKET=(str, ""),
-    B2_CDN_DOMAIN=(str, ""),
-    B2_SIGNED_URLS=(bool, False),
-    B2_URL_EXPIRE_SECONDS=(int, 3600),
     R2_SIGNED_URLS=(bool, False),
     R2_URL_EXPIRE_SECONDS=(int, 21600),
     REDIS_URL=(str, ""),
@@ -202,60 +194,35 @@ if USE_LOCAL_MEDIA:
         "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
     }
 else:
-    _r2_values = {
-        "account_id": env("R2_ACCOUNT_ID"),
+    _account_id = env("R2_ACCOUNT_ID")
+    _r2_signed_urls = env("R2_SIGNED_URLS")
+    _storage_values = {
+        "endpoint_url": env("R2_ENDPOINT_URL")
+        or (f"https://{_account_id}.r2.cloudflarestorage.com" if _account_id else ""),
         "access_key_id": env("R2_ACCESS_KEY_ID"),
         "secret_access_key": env("R2_SECRET_ACCESS_KEY"),
         "bucket_name": env("R2_BUCKET_NAME"),
-        "endpoint_url": env("R2_ENDPOINT_URL"),
         "public_base_url": env("R2_PUBLIC_BASE_URL"),
     }
-    _use_r2 = any(_r2_values.values())
-
-    if _use_r2:
-        _storage_values = {
-            "endpoint_url": _r2_values["endpoint_url"]
-            or (
-                f"https://{_r2_values['account_id']}.r2.cloudflarestorage.com"
-                if _r2_values["account_id"]
-                else ""
-            ),
-            "region": env("R2_REGION"),
-            "access_key_id": _r2_values["access_key_id"],
-            "secret_access_key": _r2_values["secret_access_key"],
-            "bucket_name": _r2_values["bucket_name"],
-            "public_base_url": _r2_values["public_base_url"],
-        }
-        _storage_label = "R2"
-    else:
-        _storage_values = {
-            "endpoint_url": env("B2_ENDPOINT"),
-            "region": env("B2_REGION"),
-            "access_key_id": env("B2_KEY_ID"),
-            "secret_access_key": env("B2_APP_KEY"),
-            "bucket_name": env("B2_BUCKET"),
-            "public_base_url": env("B2_CDN_DOMAIN"),
-        }
-        _storage_label = "B2"
-
     _required_storage_values = [
         "endpoint_url",
         "access_key_id",
         "secret_access_key",
         "bucket_name",
-        "public_base_url" if _use_r2 else "region",
     ]
+    if not _r2_signed_urls:
+        _required_storage_values.append("public_base_url")
     _missing_storage_values = [
         name for name in _required_storage_values if not _storage_values[name]
     ]
     if _missing_storage_values:
         raise ImproperlyConfigured(
-            f"{_storage_label} storage requires configured values for: "
+            "R2 storage requires configured values for: "
             + ", ".join(_missing_storage_values)
         )
 
     AWS_S3_ENDPOINT_URL = _storage_values["endpoint_url"]
-    AWS_S3_REGION_NAME = _storage_values["region"] or "auto"
+    AWS_S3_REGION_NAME = env("R2_REGION")
     AWS_ACCESS_KEY_ID = _storage_values["access_key_id"]
     AWS_SECRET_ACCESS_KEY = _storage_values["secret_access_key"]
     AWS_STORAGE_BUCKET_NAME = _storage_values["bucket_name"]
@@ -269,39 +236,20 @@ else:
     # and phones may keep a file forever.
     AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "public, max-age=31536000, immutable"}
 
-    if _use_r2:
+    if not _r2_signed_urls:
         _public_url = urlsplit(_storage_values["public_base_url"])
         if _public_url.scheme != "https" or not _public_url.netloc:
             raise ImproperlyConfigured(
                 "R2_PUBLIC_BASE_URL must be an absolute HTTPS URL for the public bucket."
             )
-        if env("R2_SIGNED_URLS"):
-            # Private bucket: every url is presigned and expires, so a copied
-            # link stops working. Signed urls cannot use the public domain.
-            AWS_QUERYSTRING_AUTH = True
-            AWS_QUERYSTRING_EXPIRE = env("R2_URL_EXPIRE_SECONDS")
-        else:
-            AWS_S3_CUSTOM_DOMAIN = _public_url.netloc + _public_url.path.rstrip("/")
-            AWS_S3_URL_PROTOCOL = "https:"
-            AWS_QUERYSTRING_AUTH = False
     else:
-        # B2 may use unsigned public URLs or signed URLs for private buckets.
-        B2_SIGNED_URLS = env("B2_SIGNED_URLS")
-        AWS_QUERYSTRING_AUTH = B2_SIGNED_URLS
-        AWS_QUERYSTRING_EXPIRE = env("B2_URL_EXPIRE_SECONDS")
-
-        _cdn_domain = _storage_values["public_base_url"]
-        if _cdn_domain:
-            if B2_SIGNED_URLS:
-                # storages builds the url from the custom domain and returns it
-                # unsigned (s3.py url()), so a CDN in front of a private bucket
-                # would serve 401s. Fail loudly rather than at request time.
-                raise ImproperlyConfigured(
-                    "B2_CDN_DOMAIN cannot be combined with B2_SIGNED_URLS: urls "
-                    "built from a custom domain are never signed. Use a public "
-                    "bucket with the CDN, or drop the CDN."
-                )
-            AWS_S3_CUSTOM_DOMAIN = _cdn_domain
+        # Private bucket: signed links use the S3 endpoint, not the public domain.
+        AWS_QUERYSTRING_AUTH = True
+        AWS_QUERYSTRING_EXPIRE = env("R2_URL_EXPIRE_SECONDS")
+    if not _r2_signed_urls:
+        AWS_S3_CUSTOM_DOMAIN = _public_url.netloc + _public_url.path.rstrip("/")
+        AWS_S3_URL_PROTOCOL = "https:"
+        AWS_QUERYSTRING_AUTH = False
 
     STORAGES = {
         "default": {"BACKEND": "storages.backends.s3.S3Storage"},

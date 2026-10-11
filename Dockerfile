@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    USE_LOCAL_MEDIA=False
 
 WORKDIR /app
 
@@ -10,8 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Baked into the image so the running container serves the admin's CSS.
-RUN python manage.py collectstatic --noinput
+# Static files use local storage at build time; runtime media uses R2.
+RUN USE_LOCAL_MEDIA=True python manage.py collectstatic --noinput
 
 # Railway reads EXPOSE to work out which port to route the public domain to.
 # Without it a Dockerfile service gets "Application failed to respond" even
